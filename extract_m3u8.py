@@ -5,6 +5,7 @@ import hashlib
 STREAM_FILE = "streams.txt"
 STATIC_STREAMS_FILE = "static_streams.txt"
 PLAYLIST_FILE = "playlist.m3u8"
+HASH_FILE = "playlist.hash"
 REPO_DIR = os.getcwd()
 GIT_REMOTE = "origin"
 GIT_BRANCH = "main"
@@ -23,32 +24,42 @@ def extract_m3u8(url):
         if result.returncode == 0:
             return result.stdout.strip()
     except Exception as e:
-        print(f"Error extracting: {e}")
+        print(f"Error extracting m3u8 for URL {url}: {e}")
     return None
 
 def sha256sum(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 def generate_master_playlist(youtube_streams):
-    with open(PLAYLIST_FILE, "w", encoding="utf-8") as playlist:
-        playlist.write("#EXTM3U\n\n")
-        # Write dynamic (YouTube) streams
-        for name, url in youtube_streams.items():
-            playlist.write(f"#EXTINF:-1,{name} - YouTube Live\n")
-            playlist.write(f"{url}\n\n")
-        # Append static streams
-        append_static_streams(playlist)
+    content = "#EXTM3U\n\n"
+    for name, url in youtube_streams.items():
+        content += f"#EXTINF:-1,{name} - YouTube Live\n{url}\n\n"
 
-def append_static_streams(playlist):
     try:
         with open(STATIC_STREAMS_FILE, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     name, url = line.strip().split()
-                    playlist.write(f"#EXTINF:-1,{name} - Static Stream\n")
-                    playlist.write(f"{url}\n\n")
+                    content += f"#EXTINF:-1,{name} - Static Stream\n{url}\n\n"
     except Exception as e:
         print(f"Error reading static streams: {e}")
+
+    return content
+
+def playlist_has_changed(new_content):
+    new_hash = sha256sum(new_content)
+    if os.path.exists(HASH_FILE):
+        with open(HASH_FILE, "r") as f:
+            old_hash = f.read().strip()
+        if new_hash == old_hash:
+            return False  # no change
+    with open(HASH_FILE, "w") as f:
+        f.write(new_hash)
+    return True
+
+def write_playlist(content):
+    with open(PLAYLIST_FILE, "w", encoding="utf-8") as f:
+        f.write(content)
 
 def git_commit_and_push():
     subprocess.run(["git", "add", "."], cwd=REPO_DIR)
@@ -64,8 +75,14 @@ def main():
         if new_link:
             youtube_streams[name] = new_link
 
-    generate_master_playlist(youtube_streams)
-    git_commit_and_push()
+    playlist_content = generate_master_playlist(youtube_streams)
+
+    if playlist_has_changed(playlist_content):
+        write_playlist(playlist_content)
+        git_commit_and_push()
+        print("Playlist updated and pushed to GitHub.")
+    else:
+        print("No changes detected. Skipping git commit and push.")
 
 if __name__ == "__main__":
     main()
