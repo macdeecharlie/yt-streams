@@ -5,7 +5,7 @@ import hashlib
 STREAM_FILE = "streams.txt"
 STATIC_STREAMS_FILE = "static_streams.txt"
 PLAYLIST_FILE = "playlist.m3u8"
-M3U8_DIR = "m3u8"
+M3U8_FOLDER = "m3u8"  # Folder for storing m3u8 files
 REPO_DIR = os.getcwd()
 GIT_REMOTE = "origin"
 GIT_BRANCH = "main"
@@ -51,36 +51,42 @@ def append_static_streams(playlist):
     except Exception as e:
         print(f"Error reading static streams: {e}")
 
-def update_m3u8_files(youtube_streams):
-    # Ensure m3u8 folder exists
-    if not os.path.exists(M3U8_DIR):
-        os.makedirs(M3U8_DIR)
-    
-    # Get all current m3u8 file names in the folder
-    existing_files = set(os.listdir(M3U8_DIR))
+def generate_m3u8_files(youtube_streams):
+    # Clear m3u8 folder before generating new files
+    if os.path.exists(M3U8_FOLDER):
+        for filename in os.listdir(M3U8_FOLDER):
+            file_path = os.path.join(M3U8_FOLDER, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+    else:
+        os.mkdir(M3U8_FOLDER)
 
-    # Create or update .m3u8 files for the active streams
+    # Generate new .m3u8 files for each stream in the folder
     for name, url in youtube_streams.items():
-        file_name = f"{sha256sum(url)}.m3u8"  # Use a hash of the URL as the filename
-        file_path = os.path.join(M3U8_DIR, file_name)
-
-        # Only create/update file if it's not already present
-        if file_name not in existing_files:
-            with open(file_path, "w", encoding="utf-8") as m3u8_file:
-                m3u8_file.write(f"#EXTM3U\n\n#EXTINF:-1,{name} - YouTube Live\n")
-                m3u8_file.write(f"{url}\n\n")
-            print(f"Created/Updated {file_name}")
+        file_path = os.path.join(M3U8_FOLDER, f"{name}.m3u8")
+        with open(file_path, "w", encoding="utf-8") as m3u8_file:
+            m3u8_file.write(f"#EXTM3U\n\n#EXTINF:-1,{name} - YouTube Live\n")
+            m3u8_file.write(f"{url}\n\n")
     
-    # Delete outdated m3u8 files
-    for file in existing_files:
-        if not any(file == f"{sha256sum(url)}.m3u8" for url in youtube_streams.values()):
-            file_path = os.path.join(M3U8_DIR, file)
-            os.remove(file_path)
-            print(f"Deleted outdated file: {file}")
+    # Append static streams to m3u8 folder
+    append_static_m3u8_files()
+
+def append_static_m3u8_files():
+    try:
+        with open(STATIC_STREAMS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    name, url = line.strip().split()
+                    file_path = os.path.join(M3U8_FOLDER, f"{name}.m3u8")
+                    with open(file_path, "w", encoding="utf-8") as m3u8_file:
+                        m3u8_file.write(f"#EXTM3U\n\n#EXTINF:-1,{name} - Static Stream\n")
+                        m3u8_file.write(f"{url}\n\n")
+    except Exception as e:
+        print(f"Error reading static streams for m3u8: {e}")
 
 def git_commit_and_push():
     subprocess.run(["git", "add", "."], cwd=REPO_DIR)
-    subprocess.run(["git", "commit", "-m", "Auto update playlist with direct m3u8 links"], cwd=REPO_DIR)
+    subprocess.run(["git", "commit", "-m", "Auto update playlist and m3u8 files"], cwd=REPO_DIR)
     subprocess.run(["git", "push", GIT_REMOTE, GIT_BRANCH], cwd=REPO_DIR)
 
 def main():
@@ -93,7 +99,7 @@ def main():
             youtube_streams[name] = new_link
 
     generate_master_playlist(youtube_streams)
-    update_m3u8_files(youtube_streams)
+    generate_m3u8_files(youtube_streams)
     git_commit_and_push()
 
 if __name__ == "__main__":
