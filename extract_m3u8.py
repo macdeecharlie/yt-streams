@@ -27,8 +27,9 @@ def extract_m3u8(url):
         print(f"Error extracting m3u8 for URL {url}: {e}")
     return None
 
-def sha256sum(text):
-    return hashlib.sha256(text.encode()).hexdigest()
+def sha256sum_file(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 def generate_master_playlist(youtube_streams):
     content = "#EXTM3U\n\n"
@@ -44,22 +45,22 @@ def generate_master_playlist(youtube_streams):
     except Exception as e:
         print(f"Error reading static streams: {e}")
 
-    return content
+    with open(PLAYLIST_FILE, "w", encoding="utf-8") as f:
+        f.write(content)
 
-def playlist_has_changed(new_content):
-    new_hash = sha256sum(new_content)
+def playlist_has_changed():
+    if not os.path.exists(PLAYLIST_FILE):
+        return True
+
+    new_hash = sha256sum_file(PLAYLIST_FILE)
     if os.path.exists(HASH_FILE):
         with open(HASH_FILE, "r") as f:
             old_hash = f.read().strip()
         if new_hash == old_hash:
-            return False  # no change
+            return False
     with open(HASH_FILE, "w") as f:
         f.write(new_hash)
     return True
-
-def write_playlist(content):
-    with open(PLAYLIST_FILE, "w", encoding="utf-8") as f:
-        f.write(content)
 
 def git_commit_and_push():
     subprocess.run(["git", "add", "."], cwd=REPO_DIR)
@@ -75,14 +76,13 @@ def main():
         if new_link:
             youtube_streams[name] = new_link
 
-    playlist_content = generate_master_playlist(youtube_streams)
+    generate_master_playlist(youtube_streams)
 
-    if playlist_has_changed(playlist_content):
-        write_playlist(playlist_content)
+    if playlist_has_changed():
         git_commit_and_push()
-        print("Playlist updated and pushed to GitHub.")
+        print("✅ Playlist updated and pushed.")
     else:
-        print("No changes detected. Skipping git commit and push.")
+        print("🟡 No changes in playlist. Skipping push.")
 
 if __name__ == "__main__":
     main()
